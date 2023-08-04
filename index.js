@@ -5,6 +5,8 @@ const request = require('request-promise');
 const fs = require('fs');
 const Promise = require('promise');
 const promisePoller = require('promise-poller').default;
+const axios = require("axios");
+const convert = require("xml-js");
 const app = express();
 const port = 3000;
 
@@ -21,6 +23,11 @@ let projectUrl;
 let projectId;
 
 app.post('/startautoedit', async (req, res) => {
+
+  let {videoStartTime, videoEndTime } = await getVideoTimings(baseDomain, internalMeetingID);
+  console.log("VideoStartTime is : ",videoStartTime)
+  console.log("VideoEndTime is : ",videoEndTime)
+
   const projectData = {
     json: '{}',
     name: 'Test 101',
@@ -37,7 +44,7 @@ app.post('/startautoedit', async (req, res) => {
     const promiseArray = [];
     promiseArray.push(
       createClip({
-        path: 'media-files/bg.mp4',
+        path: 'media-files/2bg.mp4',
         position: 0.0,
         end: 10.0,
         layer: 0,
@@ -45,7 +52,7 @@ app.post('/startautoedit', async (req, res) => {
     );
     promiseArray.push(
       createClip({
-        path: 'media-files/deckshare.webm',
+        path: 'media-files/1deckshare.webm',
         position: 0.0,
         end: 10.0,
         layer: 100
@@ -53,7 +60,7 @@ app.post('/startautoedit', async (req, res) => {
     );
     promiseArray.push(
       createClip({
-        path: 'media-files/webcam.webm',
+        path: 'media-files/1webcam.webm',
         position: 0.0,
         end: 10.0,
         layer: 200,
@@ -97,6 +104,48 @@ app.post('/startautoedit', async (req, res) => {
   }
 });
 
+
+const getXmlData = async (url) => {
+  const data = await axios.get(url);
+
+  if (
+    data.data &&
+    data.data.response &&
+    data.data.response.returncode === "FAILED"
+  ) {
+    throw new Error(data.data.response.message);
+  }
+
+  const jsonData = JSON.parse(
+    convert.xml2json(data.data, { compact: true, spaces: 2 })
+  );
+  console.log(`==== the xml data is ==== ${JSON.stringify(jsonData)}`);
+
+  return jsonData;
+};
+
+
+const baseDomain=process.env.baseDomain
+const internalMeetingID=process.env.internalMeetingID
+const getVideoTimings = async (baseDomain, internalMeetingID) => {
+  const deskshareVideoInfoUrl = `https://${baseDomain}/presentation/${internalMeetingID}/deskshare.xml`;
+
+  let data;
+  try {
+    data = await getXmlData(deskshareVideoInfoUrl);
+  } catch (e) {
+    throw new Error(`error while getting video timings ${e}`);
+  }
+
+  return {
+    // eslint-disable-next-line dot-notation
+    videoStartTime:0,
+    videoEndTime: data.recording.event["_attributes"]["stop_timestamp"],
+  };
+};
+
+
+
 function pollExportStatus(exportId) {
   return new Promise((resolve, reject) => {
     const pollInterval = 5000; // Poll every 5 seconds
@@ -132,7 +181,7 @@ function pollExportStatus(exportId) {
   });
 }
 
-function createClip(clip) {
+async function createClip(clip) {
   const clipProjectUrl = clip.projectUrl || projectUrl;
 
   const fileData = {
@@ -141,26 +190,21 @@ function createClip(clip) {
     media: fs.createReadStream(clip.path),
   };
 
-  return post('/files/', fileData)
-    .then((response) => {
-      const fileUrl = JSON.parse(response).url;
-      console.log('Successfully created file: ' + fileUrl);
-
-      const clipData = {
-        file: fileUrl,
-        json: '{}',
-        position: clip.position || 0.0,
-        start: clip.start || 0.0,
-        end: clip.end || JSON.parse(response).json.duration,
-        layer: clip.layer || 0,
-        project: clipProjectUrl,
-      };
-
-      return post('/clips/', clipData).then((response) => {
-        const clipUrl = JSON.parse(response).url;
-        console.log('Successfully created clip: ' + clipUrl);
-      });
-    });
+  const response = await post('/files/', fileData);
+  const fileUrl = JSON.parse(response).url;
+  console.log('Successfully created file: ' + fileUrl);
+  const clipData = {
+    file: fileUrl,
+    json: '{}',
+    position: clip.position || 0,
+    start: clip.start || 0,
+    end: clip.end || JSON.parse(response).json.duration,
+    layer: clip.layer || 0,
+    project: clipProjectUrl,
+  };
+  const response_1 = await post('/clips/', clipData);
+  const clipUrl = JSON.parse(response_1).url;
+  console.log('Successfully created clip: ' + clipUrl);
 }
 
 function post(endpoint, data) {

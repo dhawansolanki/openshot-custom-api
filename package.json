@@ -15,7 +15,8 @@
     "fs": "0.0.1-security",
     "promise": "^8.1.0",
     "promise-poller": "^1.2.0",
-    "request-promise": "^4.2.6"
+    "request-promise": "^4.2.6",
+    "xml-js": "^1.6.11"
   },
   "author": "Dhawan Solanki",
   "license": "MIT"
